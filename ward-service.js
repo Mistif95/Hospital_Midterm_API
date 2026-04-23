@@ -10,7 +10,7 @@ const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    database: 'db_wards' // <-- Connects ONLY to the assets database
+    database: 'db_wards'
 }).promise();
 
 app.get('/api/wards', async (req, res) => {
