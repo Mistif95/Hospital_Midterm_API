@@ -11,7 +11,7 @@ const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    database: 'db_assets' 
+    database: 'db_assets'
 }).promise();
 
 // 1. Get all assets
