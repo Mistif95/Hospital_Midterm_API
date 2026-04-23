@@ -1,7 +1,9 @@
-CREATE DATABASE IF NOT EXISTS hospital_assets;
-USE hospital_assets;
+-- ==========================================
+-- 1. ASSET DATABASE (For Asset Service)
+-- ==========================================
+CREATE DATABASE IF NOT EXISTS db_assets;
+USE db_assets;
 
--- (Assets)
 CREATE TABLE assets (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -12,7 +14,33 @@ CREATE TABLE assets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- (Movement History / Transfer log)
+INSERT INTO assets (name, type, current_ward, status, qr_hash) VALUES 
+('Patient Monitor A1', 'Electronic', 'ICU', 'Available', 'qr_hash_12345'),
+('Wheelchair W-05', 'Transport', 'ER', 'Available', 'qr_hash_67890');
+
+-- ==========================================
+-- 2. WARD DATABASE (For Ward Service)
+-- ==========================================
+CREATE DATABASE IF NOT EXISTS db_wards;
+USE db_wards;
+
+CREATE TABLE wards (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ward_name VARCHAR(100) UNIQUE NOT NULL,
+    asset_count INT DEFAULT 0
+);
+
+INSERT INTO wards (ward_name, asset_count) VALUES 
+('ICU', 1),
+('ER', 1),
+('Radiology', 0);
+
+-- ==========================================
+-- 3. TRANSFER DATABASE (For Transfer Service)
+-- ==========================================
+CREATE DATABASE IF NOT EXISTS db_transfers;
+USE db_transfers;
+
 CREATE TABLE transfers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     asset_id INT NOT NULL,
@@ -20,11 +48,5 @@ CREATE TABLE transfers (
     to_ward VARCHAR(100) NOT NULL,
     transfer_status ENUM('Pending', 'In Transit', 'Completed') DEFAULT 'Pending',
     requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP NULL,
-    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+    completed_at TIMESTAMP NULL
 );
-
--- Dummy data insert
-INSERT INTO assets (name, type, current_ward, status, qr_hash) VALUES 
-('Patient Monitor A1', 'Electronic', 'ICU', 'Available', 'qr_hash_12345'),
-('Wheelchair W-05', 'Transport', 'ER', 'Available', 'qr_hash_67890');

@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="assets/icon.png">
-    <title>Hospital Asset Management</title>
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <title>Admin - Hospital Assets</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f7f6; }
         .container { max-width: 1000px; margin: auto; }
@@ -14,254 +13,160 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background-color: #007bff; color: white; }
-        input, select, button { padding: 8px; margin: 5px 0; }
+        input, button { padding: 8px; margin: 5px 0; }
         button { background-color: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
         button:hover { background-color: #218838; }
+        .btn-blue { background-color: #007bff; }
+        .btn-blue:hover { background-color: #0056b3; }
         .btn-danger { background-color: #dc3545; }
         .btn-danger:hover { background-color: #c82333; }
         .form-group { display: flex; gap: 10px; align-items: center; }
         
-        /* Scanner specific styles */
-        #reader { width: 100%; max-width: 500px; margin: auto; border-radius: 8px; overflow: hidden; }
-        #qr-result { font-weight: bold; color: #0056b3; text-align: center; margin-top: 15px; min-height: 24px; }
+        /* Modal Styles for QR Print */
+        #qr-modal { display: none; margin-top: 20px; padding: 20px; border: 2px dashed #007bff; background: #e9f2fb; text-align: center; }
+        #qr-image { max-width: 200px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🏥 Hospital Asset Dashboard</h1>
+    <h1>🏥 Asset Management Admin</h1>
 
     <div class="card">
-        <h2>Current Ward Inventory</h2>
-        <button onclick="fetchAssets()">Refresh Inventory</button>
+        <h2>Register New Asset</h2>
+        <form id="add-asset-form" onsubmit="addAsset(event)">
+            <div class="form-group">
+                <input type="text" id="asset-name" placeholder="Asset Name" required>
+                <input type="text" id="asset-type" placeholder="Type" required>
+                <input type="text" id="asset-ward" placeholder="Current Ward" required>
+                <button type="submit">Register Asset</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Current Inventory</h2>
+        <button onclick="fetchAssets()" class="btn-blue">Refresh Data</button>
         <table>
             <thead>
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
                     <th>Type</th>
-                    <th>Current Ward</th>
+                    <th>Ward</th>
                     <th>Status</th>
-                    <th>QR Hash</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody id="asset-table-body">
                 <tr><td colspan="6">Loading assets...</td></tr>
             </tbody>
         </table>
-    </div>
 
-    <div class="card">
-        <h2>Register New Asset</h2>
-        <form id="add-asset-form" onsubmit="addAsset(event)">
-            <div class="form-group">
-                <input type="text" id="asset-name" placeholder="Asset Name (e.g., Patient Monitor)" required>
-                <input type="text" id="asset-type" placeholder="Type (e.g., Electronic)" required>
-                <input type="text" id="asset-ward" placeholder="Ward (e.g., ICU)" required>
-                <button type="submit">Add Asset</button>
-            </div>
-        </form>
-    </div>
-
-    <div class="card">
-        <h2>Initiate Transfer</h2>
-        <form id="transfer-form" onsubmit="initiateTransfer(event)">
-            <div class="form-group">
-                <input type="number" id="transfer-asset-id" placeholder="Asset ID" required>
-                <input type="text" id="transfer-from" placeholder="From Ward" required>
-                <input type="text" id="transfer-to" placeholder="To Ward" required>
-                <button type="submit">Start Transfer</button>
-            </div>
-        </form>
-
-        <hr style="margin: 20px 0; border-top: 1px solid #ddd;">
-
-        <h2>Transfer Log</h2>
-        <button onclick="fetchTransfers()">Refresh Log</button>
-        <table>
-            <thead>
-                <tr>
-                    <th>Transfer ID</th>
-                    <th>Asset ID</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody id="transfer-table-body">
-            </tbody>
-        </table>
-    </div>
-
-    <div class="card">
-        <h2>📷 Scan Asset QR Code</h2>
-        <p style="text-align: center; color: #666;">Use your device's camera to scan an asset tag and verify its status or confirm delivery.</p>
-        
-        <div id="reader"></div>
-        
-        <div class="form-group" style="justify-content: center; margin-top: 15px;">
-            <button id="start-scan-btn" onclick="startCamera()">Start Camera</button>
-            <button id="stop-scan-btn" class="btn-danger" onclick="stopCamera()" style="display: none;">Stop Camera</button>
+        <div id="qr-modal">
+            <h3 id="qr-title"></h3>
+            <img id="qr-image" src="" alt="QR Code">
+            <br>
+            <button onclick="window.print()">🖨️ Print Tag</button>
+            <button class="btn-danger" onclick="document.getElementById('qr-modal').style.display='none'">Close</button>
         </div>
-        
-        <p id="qr-result"></p>
     </div>
-
 </div>
 
 <script>
-    // Make sure this matches your Express server port defined in your .env
+    // Points directly to the API Gateway
     const API_BASE = 'http://localhost:3000/api';
 
-    // ==========================================
-    // INVENTORY & TRANSFER LOGIC
-    // ==========================================
-    // async function fetchAssets() {
-    //     try {
-    //         const res = await fetch(`${API_BASE}/ward-assets`);
-    //         const data = await res.json();
-    //         // Simulating UI update based on your dummy data layout
-    //         document.getElementById('asset-table-body').innerHTML = `
-    //             <tr>
-    //                 <td>1</td><td>Patient Monitor A1</td><td>Electronic</td><td>ICU</td><td>Available</td><td>qr_hash_12345</td>
-    //             </tr>
-    //             <tr>
-    //                 <td>2</td><td>Wheelchair W-05</td><td>Transport</td><td>ER</td><td>Available</td><td>qr_hash_67890</td>
-    //             </tr>`;
-    //     } catch (error) { console.error("Error fetching assets", error); }
-    // }
-
-    // async function addAsset(event) {
-    //     event.preventDefault();
-    //     const payload = {
-    //         name: document.getElementById('asset-name').value,
-    //         type: document.getElementById('asset-type').value,
-    //         current_ward: document.getElementById('asset-ward').value
-    //     };
-    //     try {
-    //         const res = await fetch(`${API_BASE}/ward-assets`, {
-    //             method: 'POST',
-    //             headers: { 'Content-Type': 'application/json' },
-    //             body: JSON.stringify(payload)
-    //         });
-    //         const data = await res.json();
-    //         alert(data.message);
-    //         event.target.reset();
-    //     } catch (error) { console.error("Error adding asset", error); }
-    // }
-
-    // async function fetchTransfers() {
-    //     try {
-    //         const res = await fetch(`${API_BASE}/transfers`);
-    //         const data = await res.json();
-    //         document.getElementById('transfer-table-body').innerHTML = `
-    //             <tr>
-    //                 <td>101</td><td>1</td><td>ICU</td><td>ER</td><td>In Transit</td>
-    //                 <td><button onclick="receiveTransfer(101)">Mark Received</button></td>
-    //             </tr>`;
-    //     } catch (error) { console.error("Error fetching transfers", error); }
-    // }
-
-    // async function initiateTransfer(event) {
-    //     event.preventDefault();
-    //     const payload = {
-    //         asset_id: document.getElementById('transfer-asset-id').value,
-    //         from_ward: document.getElementById('transfer-from').value,
-    //         to_ward: document.getElementById('transfer-to').value
-    //     };
-    //     try {
-    //         const res = await fetch(`${API_BASE}/transfers`, {
-    //             method: 'POST',
-    //             headers: { 'Content-Type': 'application/json' },
-    //             body: JSON.stringify(payload)
-    //         });
-    //         const data = await res.json();
-    //         alert(data.message);
-    //         event.target.reset();
-    //     } catch (error) { console.error("Error starting transfer", error); }
-    // }
-
-    // async function receiveTransfer(transferId) {
-    //     try {
-    //         const res = await fetch(`${API_BASE}/transfers/receive`, {
-    //             method: 'PUT',
-    //             headers: { 'Content-Type': 'application/json' },
-    //             body: JSON.stringify({ id: transferId })
-    //         });
-    //         const data = await res.json();
-    //         alert(data.message);
-    //     } catch (error) { console.error("Error receiving transfer", error); }
-    // }
-
-    // ==========================================
-    // QR SCANNER LOGIC
-    // ==========================================
-    let html5QrcodeScanner;
-
-    function startCamera() {
-        document.getElementById('start-scan-btn').style.display = 'none';
-        document.getElementById('stop-scan-btn').style.display = 'inline-block';
-        document.getElementById('qr-result').innerText = "Camera starting...";
-
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        
-        // fps: frames per second. qrbox: sizing of the scanning area
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-        // Starts the camera facing outward (environment)
-        html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
-        .then(() => {
-            document.getElementById('qr-result').innerText = "Scanning... Point camera at a QR code.";
-        })
-        .catch((err) => {
-            console.error("Error starting camera", err);
-            document.getElementById('qr-result').innerText = "❌ Camera access denied or unavailable. Check browser permissions.";
+    // 1. Fetch real data from the database
+    async function fetchAssets() {
+        try {
+            const res = await fetch(`${API_BASE}/assets`);
+            const json = await res.json();
             
-            // Reset buttons if it fails
-            document.getElementById('start-scan-btn').style.display = 'inline-block';
-            document.getElementById('stop-scan-btn').style.display = 'none';
-        });
-    }
-
-    function stopCamera() {
-        if (html5QrcodeScanner) {
-            html5QrcodeScanner.stop().then(() => {
-                document.getElementById('start-scan-btn').style.display = 'inline-block';
-                document.getElementById('stop-scan-btn').style.display = 'none';
-                document.getElementById('qr-result').innerText = "Camera stopped.";
-            }).catch((err) => {
-                console.error("Failed to stop camera", err);
-            });
+            const tableBody = document.getElementById('asset-table-body');
+            tableBody.innerHTML = ""; // Clear out the loading text
+            
+            if (json.data && json.data.length > 0) {
+                json.data.forEach(asset => {
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td>${asset.id}</td>
+                            <td>${asset.name}</td>
+                            <td>${asset.type}</td>
+                            <td>${asset.current_ward}</td>
+                            <td><strong>${asset.status}</strong></td>
+                            <td>
+                                <button class="btn-blue" onclick="showQRCode('${asset.qr_hash}', '${asset.name}')">Print QR</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } else {
+                tableBody.innerHTML = `<tr><td colspan="6">No assets found in database.</td></tr>`;
+            }
+        } catch (error) { 
+            console.error("Error fetching assets", error); 
+            document.getElementById('asset-table-body').innerHTML = `<tr><td colspan="6" style="color: red;">Failed to load real data. Is the backend running?</td></tr>`;
         }
     }
 
-    async function onScanSuccess(decodedText, decodedResult) {
-        // Stop the camera as soon as we get a successful read
-        stopCamera();
+    // 2. Add a new asset
+    async function addAsset(event) {
+        event.preventDefault();
         
-        document.getElementById('qr-result').innerText = `Scanned: ${decodedText}. Verifying...`;
+        // Generate a random QR hash for the new asset
+        const randomHash = 'qr_hash_' + Math.random().toString(36).substr(2, 9);
+
+        const payload = {
+            name: document.getElementById('asset-name').value,
+            type: document.getElementById('asset-type').value,
+            current_ward: document.getElementById('asset-ward').value,
+            qr_hash: randomHash
+        };
 
         try {
-            // Hit your Express backend with the scanned hash
-            const res = await fetch(`${API_BASE}/asset-check/qr/${decodedText}`);
+            const res = await fetch(`${API_BASE}/assets`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
             const data = await res.json();
-            
-            // Display the response from your server
-            document.getElementById('qr-result').innerHTML = `✅ <strong>Verified:</strong> ${data.message}`;
-            
-            // Note: If you want to automatically trigger a "Receive Transfer" here, 
-            // you could call your backend PUT endpoint instead of just the GET check.
-            
-        } catch (error) {
-            console.error("Error checking scanned QR", error);
-            document.getElementById('qr-result').innerText = "❌ Verification failed. Could not connect to server.";
+            alert("Success: Asset Registered!");
+            event.target.reset(); // Clear form
+            fetchAssets(); // Refresh table
+        } catch (error) { 
+            console.error("Error adding asset", error); 
+            alert("Failed to add asset. Check console.");
         }
     }
 
-    // Initial data load on page start
-    fetchAssets();
-    fetchTransfers();
+    // 3. Show QR Code Modal
+    async function showQRCode(hash, name) {
+        document.getElementById('qr-modal').style.display = 'block';
+        document.getElementById('qr-title').innerText = `QR Tag for: ${name}`;
+        document.getElementById('qr-image').src = ""; // Clear old image
+        
+        try {
+            // Fetch the Base64 image from the backend
+            const res = await fetch(`${API_BASE}/assets/qr/generate/${hash}`);
+            const data = await res.json();
+            
+            if (data.image) {
+                document.getElementById('qr-image').src = data.image; 
+            } else {
+                alert("Failed to load QR image from server.");
+            }
+        } catch (error) {
+            console.error("Failed to load QR code", error);
+            // Fallback to a free public API just in case your backend fails during the demo
+            document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${hash}`;
+        }
+    }
+
+    // Call this immediately when the page loads
+    window.onload = () => {
+        fetchAssets();
+    };
 </script>
 
 </body>
