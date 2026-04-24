@@ -18,13 +18,19 @@
         button:hover { background-color: #218838; }
         .btn-blue { background-color: #007bff; }
         .btn-blue:hover { background-color: #0056b3; }
+        .btn-send { background-color: #ffc107; color: black; }
+        .btn-send:hover { background-color: #e0a800; }
+        .btn-warning { background-color: #fd7e14; color: white; }
+        .btn-warning:hover { background-color: #e86e04; }
         .btn-danger { background-color: #dc3545; }
         .btn-danger:hover { background-color: #c82333; }
         .form-group { display: flex; gap: 10px; align-items: center; }
         
-        /* Modal Styles for QR Print */
+        /* Modal Styles */
         #qr-modal { display: none; margin-top: 20px; padding: 20px; border: 2px dashed #007bff; background: #e9f2fb; text-align: center; }
         #qr-image { max-width: 200px; margin-top: 10px; }
+        
+        .action-buttons { display: flex; gap: 5px; flex-wrap: wrap;}
     </style>
 </head>
 <body>
@@ -36,9 +42,14 @@
         <h2>Register New Asset</h2>
         <form id="add-asset-form" onsubmit="addAsset(event)">
             <div class="form-group">
-                <input type="text" id="asset-name" placeholder="Asset Name" required>
-                <input type="text" id="asset-type" placeholder="Type" required>
-                <input type="text" id="asset-ward" placeholder="Current Ward" required>
+                <input type="text" id="asset-name" placeholder="Asset Name (e.g. Bed B2)" required>
+                
+                <input type="text" id="asset-type" list="type-options" placeholder="Select or Type New" required>
+                <datalist id="type-options"></datalist>
+
+                <input type="text" id="asset-ward" list="ward-options" placeholder="Current Ward" required>
+                <datalist id="ward-options"></datalist>
+
                 <button type="submit">Register Asset</button>
             </div>
         </form>
@@ -74,20 +85,48 @@
 </div>
 
 <script>
-    // Points directly to the API Gateway
     const API_BASE = 'http://localhost:3000/api';
 
-    // 1. Fetch real data from the database
+    // 1. Fetch assets and populate table AND Type dropdown
     async function fetchAssets() {
         try {
             const res = await fetch(`${API_BASE}/assets`);
             const json = await res.json();
             
             const tableBody = document.getElementById('asset-table-body');
-            tableBody.innerHTML = ""; // Clear out the loading text
+            const typeDatalist = document.getElementById('type-options');
+            
+            tableBody.innerHTML = ""; 
+            typeDatalist.innerHTML = ""; 
             
             if (json.data && json.data.length > 0) {
+                const uniqueTypes = new Set();
+
                 json.data.forEach(asset => {
+                    let actionHTML = '';
+                    
+                    // Button Logic based on Status Constraints
+                    if (asset.status === 'Available') {
+                        actionHTML = `
+                            <button class="btn-send" onclick="sendItem('${asset.qr_hash}', '${asset.current_ward}', '${asset.name}')">📤 Send Item</button>
+                            <button class="btn-blue" disabled style="opacity: 0.5; cursor: not-allowed;" title="QR can only be printed when item is In Transit">🖨️ Print QR</button>
+                            <button class="btn-danger" onclick="deleteAsset(${asset.id}, '${asset.name}')">🗑️</button>
+                        `;
+                    } else if (asset.status === 'In Transit') {
+                        // Only here is the Print QR button active
+                        actionHTML = `
+                            <button class="btn-blue" onclick="showQRCode('${asset.qr_hash}', '${asset.name}')">🖨️ Print QR</button>
+                            <button class="btn-warning" onclick="cancelTransit(${asset.id}, '${asset.name}')">❌ Cancel Transit</button>
+                            <button class="btn-danger" disabled style="opacity: 0.5; cursor: not-allowed;" title="Cannot delete in transit">🗑️</button>
+                        `;
+                    } else if (asset.status === 'In Use') {
+                        actionHTML = `
+                            <button class="btn-blue" style="background-color: #17a2b8;" onclick="releaseItem(${asset.id}, '${asset.current_ward}')">🔄 Mark Available</button>
+                            <button class="btn-blue" disabled style="opacity: 0.5; cursor: not-allowed;" title="QR can only be printed when item is In Transit">🖨️ Print QR</button>
+                            <button class="btn-danger" disabled style="opacity: 0.5; cursor: not-allowed;" title="Cannot delete while in use">🗑️</button>
+                        `;
+                    }
+
                     tableBody.innerHTML += `
                         <tr>
                             <td>${asset.id}</td>
@@ -95,12 +134,16 @@
                             <td>${asset.type}</td>
                             <td>${asset.current_ward}</td>
                             <td><strong>${asset.status}</strong></td>
-                            <td>
-                                <button class="btn-blue" onclick="showQRCode('${asset.qr_hash}', '${asset.name}')">Print QR</button>
-                            </td>
+                            <td class="action-buttons">${actionHTML}</td>
                         </tr>
                     `;
+                    if(asset.type) uniqueTypes.add(asset.type);
                 });
+
+                uniqueTypes.forEach(type => {
+                    typeDatalist.innerHTML += `<option value="${type}">`;
+                });
+
             } else {
                 tableBody.innerHTML = `<tr><td colspan="6">No assets found in database.</td></tr>`;
             }
@@ -110,13 +153,28 @@
         }
     }
 
+    // 1b. Fetch Wards
+    async function fetchWards() {
+        try {
+            const res = await fetch(`${API_BASE}/wards`);
+            const json = await res.json();
+            const wardDatalist = document.getElementById('ward-options');
+            wardDatalist.innerHTML = ""; 
+            
+            if (json.data) {
+                json.data.forEach(ward => {
+                    wardDatalist.innerHTML += `<option value="${ward.ward_name}">`;
+                });
+            }
+        } catch (error) {
+            console.error("Failed to load wards", error);
+        }
+    }
+
     // 2. Add a new asset
     async function addAsset(event) {
         event.preventDefault();
-        
-        // Generate a random QR hash for the new asset
         const randomHash = 'qr_hash_' + Math.random().toString(36).substr(2, 9);
-
         const payload = {
             name: document.getElementById('asset-name').value,
             type: document.getElementById('asset-type').value,
@@ -125,47 +183,140 @@
         };
 
         try {
-            const res = await fetch(`${API_BASE}/assets`, {
+            await fetch(`${API_BASE}/assets`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            const data = await res.json();
             alert("Success: Asset Registered!");
-            event.target.reset(); // Clear form
-            fetchAssets(); // Refresh table
+            event.target.reset(); 
+            fetchAssets(); 
+            fetchWards(); 
         } catch (error) { 
             console.error("Error adding asset", error); 
-            alert("Failed to add asset. Check console.");
         }
     }
 
-    // 3. Show QR Code Modal
+    // 3. Delete an asset
+    async function deleteAsset(id, name) {
+        if (!confirm(`Are you sure you want to permanently delete "${name}" (ID: ${id})?`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/assets/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                alert("Asset deleted successfully.");
+                fetchAssets(); 
+            } else {
+                const data = await res.json();
+                alert("Failed to delete asset: " + data.error);
+            }
+        } catch (error) {
+            console.error("Error deleting asset", error);
+            alert("Network error. Could not reach the server.");
+        }
+    }
+
+    // 4. Send Item Logic (Triggers the Transfer Service)
+    async function sendItem(qr_hash, current_ward, name) {
+        if (!confirm(`Are you sure you want to send this item (${name})?`)) return;
+
+        const toWard = prompt(`Enter the destination ward for ${name}:`);
+        if (!toWard) {
+            alert("Action cancelled. Destination ward is required.");
+            return;
+        }
+        
+        if (toWard === current_ward) {
+            alert("Transfer failed: Destination cannot be the same as the current ward.");
+            return;
+        }
+
+        try {
+            const payload = { qr_hash: qr_hash, from_ward: current_ward, to_ward: toWard };
+
+            const res = await fetch(`${API_BASE}/transfers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert("Success: Item is now 'In Transit'. You may now print the QR code.");
+                fetchAssets(); 
+            } else {
+                alert("Failed to send item: " + (data.error || data.message));
+            }
+        } catch (error) {
+            console.error("Error sending item:", error);
+            alert("Network error. Could not connect to API Gateway.");
+        }
+    }
+
+    // 5. Cancel Transit Logic
+    async function cancelTransit(asset_id, name) {
+        if (!confirm(`Are you sure you want to CANCEL the transit for ${name}?`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/transfers/cancel/${asset_id}`, {
+                method: 'DELETE'
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert("Transit cancelled. The item is now 'Available' again.");
+                fetchAssets(); // Refresh table to swap the buttons back to normal
+            } else {
+                alert("Failed to cancel transit: " + (data.error || data.message));
+            }
+        } catch (error) {
+            console.error("Error cancelling transit:", error);
+            alert("Network error. Could not connect to API Gateway.");
+        }
+    }
+
+    // 6. Show QR Code Modal
     async function showQRCode(hash, name) {
         document.getElementById('qr-modal').style.display = 'block';
         document.getElementById('qr-title').innerText = `QR Tag for: ${name}`;
-        document.getElementById('qr-image').src = ""; // Clear old image
+        document.getElementById('qr-image').src = ""; 
         
         try {
-            // Fetch the Base64 image from the backend
             const res = await fetch(`${API_BASE}/assets/qr/generate/${hash}`);
             const data = await res.json();
-            
             if (data.image) {
                 document.getElementById('qr-image').src = data.image; 
-            } else {
-                alert("Failed to load QR image from server.");
             }
         } catch (error) {
-            console.error("Failed to load QR code", error);
-            // Fallback to a free public API just in case your backend fails during the demo
             document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${hash}`;
         }
     }
 
-    // Call this immediately when the page loads
+    // 7. Release an 'In Use' Item
+    async function releaseItem(id, current_ward) {
+        if (!confirm("Are you sure this item is no longer in use and can be marked as 'Available'?")) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/assets/${id}/location`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ current_ward: current_ward, status: 'Available' })
+            });
+            
+            if (res.ok) {
+                fetchAssets(); 
+            }
+        } catch (error) {
+            console.error("Error releasing item:", error);
+        }
+    }
+
+    // Initialize on page load
     window.onload = () => {
         fetchAssets();
+        fetchWards();
     };
 </script>
 
