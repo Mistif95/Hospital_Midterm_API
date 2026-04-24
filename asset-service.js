@@ -11,7 +11,7 @@ const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    database: 'db_assets'
+    database: 'db_assets' 
 }).promise();
 
 // 1. Get all assets
@@ -73,6 +73,30 @@ app.get('/api/assets/qr/generate/:hash', async (req, res) => {
     } catch (err) {
         console.error("Failed to generate QR", err);
         res.status(500).json({ error: "Failed to generate QR code" });
+    }
+});
+
+// 6. Delete an asset (Used by index.html Delete button)
+app.delete('/api/assets/:id', async (req, res) => {
+    try {
+        // First, check the status of the asset
+        const [rows] = await db.query('SELECT status FROM assets WHERE id = ?', [req.params.id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "Asset not found" });
+        }
+        if (rows[0].status === 'In Use') {
+            return res.status(400).json({ error: "Action Denied: Cannot delete an asset that is currently In Use." });
+        }
+        if (rows[0].status === 'In Transit') {
+            return res.status(400).json({ error: "Action Denied: Cannot delete an asset that is In Transit." });
+        }
+
+        // If safe, delete it
+        await db.query('DELETE FROM assets WHERE id = ?', [req.params.id]);
+        res.json({ message: "Asset deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
