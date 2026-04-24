@@ -1,6 +1,6 @@
 const express = require('express');
 const mysql = require('mysql2');
-const QRCode = require('qrcode'); // <-- Added QR library
+const QRCode = require('qrcode');
 require('dotenv').config();
 
 const app = express();
@@ -24,7 +24,7 @@ app.get('/api/assets', async (req, res) => {
     }
 });
 
-// 2. Validate asset by QR Hash (Used internally by Transfer Service & Scanner)
+// 2. Validate asset by QR Hash
 app.get('/api/assets/qr/:hash', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM assets WHERE qr_hash = ?', [req.params.hash]);
