@@ -15,6 +15,7 @@
         button:active { transform: scale(0.95); }
         .btn-stop { background-color: #dc3545; display: none; }
         #status-card { margin-top: 20px; padding: 15px; border-radius: 10px; width: 90%; max-width: 400px; text-align: center; display: none; background: white; color: black; }
+        #action-buttons { display: none; margin-top: 15px; gap: 10px; justify-content: center; flex-direction: column; }
     </style>
 </head>
 <body>
@@ -34,11 +35,13 @@
     <div id="status-card">
         <h3 id="status-title" style="margin-top: 0;"></h3>
         <p id="status-msg"></p>
-        <button onclick="document.getElementById('status-card').style.display='none'; startScanner();" style="width: 100%; padding: 10px; margin-top: 10px; background-color: #333;">Scan Another</button>
+        
+        <div id="action-buttons"></div>
+
+        <button onclick="resetScanner();" style="width: 100%; padding: 10px; margin-top: 15px; background-color: #333; color: white; border-radius: 8px;">Scan Another</button>
     </div>
 
 <script>
-    // Points directly to the API Gateway
     const API_BASE = 'http://localhost:3000/api';
     let html5QrcodeScanner;
 
@@ -46,24 +49,21 @@
         document.getElementById('start-btn').style.display = 'none';
         document.getElementById('stop-btn').style.display = 'inline-block';
         document.getElementById('status-card').style.display = 'none';
+        document.getElementById('action-buttons').style.display = 'none';
 
         html5QrcodeScanner = new Html5Qrcode("reader");
-        
-        // Mobile optimized config
         const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
 
         html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
         .catch(err => {
-            showStatus("Camera Error", "Could not access the rear camera. Please check browser permissions.", false);
+            showStatus("Camera Error", "Could not access the rear camera.", false);
             resetButtons();
         });
     }
 
     function stopScanner() {
         if (html5QrcodeScanner) {
-            html5QrcodeScanner.stop().then(() => {
-                resetButtons();
-            }).catch(err => console.error(err));
+            html5QrcodeScanner.stop().then(() => resetButtons()).catch(err => console.error(err));
         }
     }
 
@@ -72,25 +72,75 @@
         document.getElementById('stop-btn').style.display = 'none';
     }
 
+    function resetScanner() {
+        document.getElementById('status-card').style.display = 'none';
+        startScanner();
+    }
+
     async function onScanSuccess(decodedText) {
-        stopScanner(); // Immediately stop camera to prevent multiple rapid scans
-        
-        showStatus("Verifying...", `Checking asset hash: ${decodedText.substring(0, 8)}...`, true);
+        stopScanner(); 
+        showStatus("Verifying...", `Checking asset hash...`, true);
 
         try {
-            // Hit the Gateway, which routes to Asset Service to check if the hash is valid
+            // 1. Fetch Asset Details
             const res = await fetch(`${API_BASE}/assets/qr/${decodedText}`);
             const data = await res.json();
             
             if (res.ok) {
-                showStatus("✅ Asset Verified", `Identified: ${data.data.name} \nLocation: ${data.data.current_ward} \nStatus: ${data.data.status}`, true);
+                const asset = data.data;
+
+                // 2. Logic: If it is In Transit, fetch the Transfer details
+                if (asset.status === 'In Transit') {
+                    const transferRes = await fetch(`${API_BASE}/transfers/active/${asset.id}`);
+                    const transferData = await transferRes.json();
+                    
+                    if (transferRes.ok) {
+                        const transfer = transferData.data;
+                        const details = `
+                            <strong>Identified:</strong> ${asset.name}<br><br>
+                            <strong>Location Origin:</strong> ${transfer.from_ward}<br>
+                            <strong>Location Destination:</strong> <span style="color:red; font-size:18px;">${transfer.to_ward}</span>
+                        `;
+                        showStatus("📦 Arriving Asset", details, true);
+
+                        // Render Buttons
+                        const btnContainer = document.getElementById('action-buttons');
+                        btnContainer.innerHTML = `
+                            <button style="background-color: #28a745; border-radius: 8px; width: 100%;" onclick="confirmItem(${transfer.id})">✅ Confirm Item</button>
+                            <button style="background-color: #dc3545; border-radius: 8px; width: 100%;" onclick="wrongLocation()">❌ Wrong Location</button>
+                        `;
+                        btnContainer.style.display = 'flex';
+                    }
+                } 
+                // Logic: If it's already in use or available
+                else {
+                    showStatus("✅ Asset Status", `<strong>${asset.name}</strong> <br><br>Current Ward: ${asset.current_ward} <br>Status: <strong>${asset.status}</strong>`, true);
+                }
             } else {
-                showStatus("❌ Invalid Asset", data.error || "Hash not found in database.", false);
+                showStatus("❌ Invalid Asset", data.error || "Hash not found.", false);
             }
         } catch (error) {
-            showStatus("❌ Failed", "Network error. Could not connect to API Gateway.", false);
-            console.error("Scan error:", error);
+            showStatus("❌ Failed", "Network error.", false);
         }
+    }
+
+    // Triggered by the "Confirm Item" button
+    async function confirmItem(transferId) {
+        try {
+            const res = await fetch(`${API_BASE}/transfers/receive/${transferId}`, { method: 'PUT' });
+            if (res.ok) {
+                document.getElementById('action-buttons').style.display = 'none';
+                showStatus("✅ Success", "Item confirmed! The asset is now <strong>IN USE</strong> at this ward.", true);
+            }
+        } catch (err) {
+            alert("Failed to confirm item.");
+        }
+    }
+
+    // Triggered by the "Wrong Location" button
+    function wrongLocation() {
+        document.getElementById('action-buttons').style.display = 'none';
+        showStatus("⚠️ Alert", "Do not accept this item. Please instruct the porter to return it to the Origin Location.", false);
     }
 
     function showStatus(title, msg, isSuccess) {
@@ -98,7 +148,7 @@
         card.style.display = 'block';
         card.style.borderTop = isSuccess ? "5px solid #28a745" : "5px solid #dc3545";
         document.getElementById('status-title').innerText = title;
-        document.getElementById('status-msg').innerText = msg;
+        document.getElementById('status-msg').innerHTML = msg; // Allowed HTML formatting
     }
 </script>
 
