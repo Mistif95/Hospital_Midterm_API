@@ -11,7 +11,7 @@ const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    database: 'db_transfers' 
+    database: 'db_transfers'
 }).promise();
 
 // Initiate a Transfer
@@ -60,13 +60,51 @@ app.put('/api/transfers/receive/:id', async (req, res) => {
         const [rows] = await db.query("SELECT * FROM transfers WHERE id = ?", [req.params.id]);
         const transfer = rows[0];
 
-        // 3. MICROSERVICE COMMUNICATION: Tell Asset Service to update location and set to Available
+        // 3. MICROSERVICE COMMUNICATION: Tell Asset Service to update location and set to In Use
         await axios.put(`http://localhost:3001/api/assets/${transfer.asset_id}/location`, {
             current_ward: transfer.to_ward,
+            status: 'In Use' // <--- FIXED: Now explicitly sets to 'In Use'
+        });
+
+        res.json({ message: "Asset successfully received and is now In Use." });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get active transfer data for the Scanner
+app.get('/api/transfers/active/:asset_id', async (req, res) => {
+    try {
+        const [rows] = await db.query("SELECT * FROM transfers WHERE asset_id = ? AND transfer_status = 'In Transit'", [req.params.asset_id]);
+        if (rows.length === 0) return res.status(404).json({ error: "No active transfer found" });
+        res.json({ data: rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Cancel Transfer
+app.delete('/api/transfers/cancel/:asset_id', async (req, res) => {
+    try {
+        // 1. Find the active "In Transit" transfer for this specific asset
+        const [rows] = await db.query("SELECT * FROM transfers WHERE asset_id = ? AND transfer_status = 'In Transit'", [req.params.asset_id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "No active transfer found to cancel." });
+        }
+        
+        const transfer = rows[0];
+
+        // 2. Delete the transfer log entirely so it doesn't clutter the database with false starts
+        await db.query("DELETE FROM transfers WHERE id = ?", [transfer.id]);
+
+        // 3. MICROSERVICE COMMUNICATION: Revert asset back to 'Available' in the Asset Service
+        await axios.put(`http://localhost:3001/api/assets/${transfer.asset_id}/location`, {
+            current_ward: transfer.from_ward,
             status: 'Available'
         });
 
-        res.json({ message: "Asset successfully received and inventory updated" });
+        res.json({ message: "Transit cancelled successfully." });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
