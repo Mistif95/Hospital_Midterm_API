@@ -1,16 +1,11 @@
-// ==========================================
-// [!] What is this
-// ==========================================
-
+ [!] What is this 
+ =
 
 🏥 Hospital Asset Tracking System (Microservices)
 This project is a decentralized web application designed to track the movement of hospital assets (e.g., wheelchairs, patient monitors) across different wards using QR codes. It is built using a Node.js Microservices Architecture with an API Gateway and MySQL databases.
 
-
-// ==========================================
-// [!] API
-// ==========================================
-
+[!] API
+=
 
 🌐 API Gateway (Port 3000): Acts as the single entry point. Routes all frontend requests to the appropriate microservice and serves the Swagger API Documentation.
 
@@ -20,51 +15,39 @@ This project is a decentralized web application designed to track the movement o
 
 🌐 Transfer Service (Port 3003): The logistics brain (db_transfers). Handles the movement of assets. It communicates dynamically with the Asset Service to validate availability before allowing a transfer.
 
+[!] Prerequisites
+=
 
-// ==========================================
-// [!] Prerequisites
-// ==========================================
+- Node.js (v18 or higher recommended)
+- XAMPP
 
+[!] How to run?
+=
 
-Node.js (v18 or higher recommended)
-XAMPP
+1. Database Setup - Use provided database inside the folder and import them directly into your database client (in this case, we're using XAMPP)
 
+2. Environment Configuration - Ensure you have a .env file in the root directory with your local database credentials:
 
-// ==========================================
-// [!] How to run?
-// ==========================================
+---> .env
+- DB_HOST=127.0.0.1
+- DB_USER=root
+- DB_PASSWORD=
 
+3. Install Dependencies - Open a terminal in the project folder and run:
 
-1. Database Setup
-Use provided database inside the folder and import them directly into your database client (in this case, we're using XAMPP)
+- Bash
+- npm install
 
-2. Environment Configuration
-Ensure you have a .env file in the root directory with your local database credentials:
-
-Code snippet
-DB_HOST=127.0.0.1
-DB_USER=root
-DB_PASSWORD=
-
-3. Install Dependencies
-Open a terminal in the project folder and run:
-
-Bash
-npm install
-
-4. Running the application
-Because this uses a microservices architecture, you must start the API Gateway and all three services simultaneously.
+4. Running the application - Because this uses a microservices architecture, you must start the API Gateway and all three services simultaneously.
 Open 4 separate terminal windows in your project folder and run the following commands, one in each terminal:
 
-node gateway.js
-node asset-service.js
-node ward-service.js
-node transfer-service.js
+- node gateway.js
+- node asset-service.js
+- node ward-service.js
+- node transfer-service.js
 
-
-// ==========================================
-// [!] User Interface
-// ==========================================
+[!] User Interface
+=
 
 
 Once the servers are running, you can access the frontend by double-clicking the HTML files in your browser:
